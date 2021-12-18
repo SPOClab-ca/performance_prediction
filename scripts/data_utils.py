@@ -1,8 +1,53 @@
 from pathlib import Path 
 import numpy as np
+import os
 import pandas as pd
+import torch
+from sklearn.model_selection import train_test_split
+from torch.utils.data import TensorDataset
 
 
+def senteval_load_preprocessed(fpath):
+    """
+    Assume the encodings are cached by preprocess_data.py
+    E.g., at ../data/senteval/bigram_shift.bert
+    """
+    if not os.path.exists(fpath):
+        raise FileNotFoundError(f'{fpath} not exists.')
+    data = torch.load(fpath)
+    nclasses = np.unique(data['y']).shape[0]    
+    return data, nclasses
+
+
+def train_val_test_split(data_x, data_y, nclasses, seed, train_size_per_class, val_size_per_class):
+    assert train_size_per_class * nclasses + val_size_per_class * nclasses < len(data_y), "train and val sizes should add up to be no more than the total num in the data!"
+
+    train_x, other_x, train_y, other_y = train_test_split(
+        data_x, data_y,
+        random_state=seed, 
+        train_size=int(train_size_per_class * nclasses), 
+        shuffle=True,
+        stratify=data_y
+    )
+    val_x, remain_x, val_y, remain_y = train_test_split(
+        other_x, other_y,
+        random_state=seed,
+        train_size=int(val_size_per_class * nclasses),
+        shuffle=True,
+        stratify=other_y
+    )
+    test_x, _, test_y, _ = train_test_split(
+        remain_x, remain_y,
+        random_state=seed,
+        train_size=int(val_size_per_class * nclasses),
+        shuffle=True,
+        stratify=remain_y
+    )
+    return np.array(train_x), np.array(train_y), \
+        np.array(val_x), np.array(val_y), \
+        np.array(test_x), np.array(test_y) 
+
+    
 def senteval_load_file(filepath):
     """
     Input:
@@ -11,7 +56,6 @@ def senteval_load_file(filepath):
         task_data: list of {'X': str, 'y': int}
         nclasses: int
     """
-
     # Just load all portions, and then do train/dev/test splitting myself
     tok2split = {'tr': 'train', 'va': 'dev', 'te': 'test'}
     task_data=[]
