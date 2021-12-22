@@ -11,4 +11,4 @@
 module use $HOME/env_scripts
 module load transformers4
 
-python -u probe.py --task bigram_shift
+python -u probing.py --task bigram_shift
