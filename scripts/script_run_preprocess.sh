@@ -7,10 +7,9 @@
 #SBATCH --output=../slurm/preprocess_%j.out
 #SBATCH --error=../slurm/preprocess_%j.err
 #SBATCH --qos=normal
-#SBATCH --dependency=afterburstbuffer:5176777
 
 . /etc/profile.d/lmod.sh
 module use $HOME/env_scripts
 module load transformers4
 
-python -u preprocess_data.py
+python -u preprocess_data.py --modelname roberta-base --corruption_step $1
