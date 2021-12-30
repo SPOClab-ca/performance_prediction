@@ -6,6 +6,7 @@ from pathlib import Path
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AdamW, get_scheduler
 from torch.utils.data import DataLoader
 import torch
+from tqdm import tqdm
 import wandb
 from utils import init_or_resume_wandb_run, timed_func
 
@@ -21,11 +22,11 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 
 
 def tokenize_function(examples, tokenizer, task):
-    #  examples is a batch of 
+    #  examples contains a batch of data.
     processed_examples = []
     if task in ["cola", "sst2"]:
         processed_examples = examples["sentence"]
-    elif task in ["ax", "mnli"]:
+    elif task in ["ax", "mnli_m", "mnli_mm"]:
         for p, h in zip(examples["premise"], examples["hypothesis"]):
             processed_examples.append(p + tokenizer.sep_token + h)
     elif task in ["mrpc", "rte", "stsb", "wnli"]:
@@ -46,7 +47,10 @@ def tokenize_function(examples, tokenizer, task):
 
 @timed_func
 def train_glue_task(args):
-    raw_datasets = load_dataset("glue", args.task) 
+    if args.task in ["mnli_m", "mnli_mm"]:
+        raw_datasets = load_dataset("glue", "mnli")
+    else:
+        raw_datasets = load_dataset("glue", args.task) 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     tokenized_datasets = raw_datasets.map(
         lambda examples: tokenize_function(examples, tokenizer, args.task), batched=True)
@@ -54,14 +58,27 @@ def train_glue_task(args):
     #tokenized_datasets.set_format("torch")  # This causes problems; I'll manually set the format in iteration
 
     train_dataset = tokenized_datasets["train"]
-    eval_dataset = tokenized_datasets["validation"]
-    test_dataset = tokenized_datasets["test"]
+    if args.task == "mnli_m":
+        eval_dataset = tokenized_datasets["validation_matched"]
+        test_dataset = tokenized_datasets["test_matched"]
+    elif args.task == "mnli_mm":
+        eval_dataset = tokenized_datasets["validation_mismatched"]
+        test_dataset = tokenized_datasets["test_mismatched"]
+    else:
+        eval_dataset = tokenized_datasets["validation"]
+        test_dataset = tokenized_datasets["test"]
 
     train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
     eval_dataloader = DataLoader(eval_dataset, batch_size=args.batch_size)
-    test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size)
+    #test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size)  # Not used
 
-    model = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=args.num_labels)
+    if args.corruption_step > 0:
+        model = AutoModelForSequenceClassification.from_pretrained(
+            "../data/corrupted_{}_checkpoints/checkpoint-{}".format(
+                args.model.replace("-", "_"), 
+                args.corruption_step))
+    else:
+        model = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=args.num_labels)
     model.to(device) 
 
     optimizer = AdamW(model.parameters(), lr=args.init_lr)
@@ -75,7 +92,7 @@ def train_glue_task(args):
 
     model.train()
     for epoch in range(args.num_epochs):
-        for b in train_dataloader:
+        for b in tqdm(train_dataloader):
             batch = {
                 "input_ids": torch.stack(b["input_ids"]).transpose(0,1).to(device),
                 "attention_mask": torch.stack(b["attention_mask"]).transpose(0,1).to(device),
@@ -98,7 +115,7 @@ def train_glue_task(args):
 
 
 def evaluate(model, eval_dataloader):
-    metric= load_metric("accuracy")
+    metric = load_metric("accuracy")
     model.eval()
     for b in eval_dataloader:
         batch = {
@@ -120,6 +137,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", type=str, default="cola")
     parser.add_argument("--model", type=str, default="roberta-base")
+    parser.add_argument("--corruption_step", type=int, default=0)
     parser.add_argument("--init_lr", type=float, default=5e-5)
     parser.add_argument("--num_epochs", type=int, default=3)
     parser.add_argument("--batch_size", type=int, default=2)
@@ -128,10 +146,11 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_dir", type=str, default="")
     args = parser.parse_args()
 
-    args.num_labels = {"mnli": 3,
+    args.num_labels = {"mnli_m": 3, "mnli_mm": 3,
         "mrpc": 2, "qnli": 2, "qqp": 2, "rte": 2, "sst2": 2,
         "cola": 2, "wnli": 2}[args.task]
     print(args)
+    
     init_or_resume_wandb_run(
         wandb_id_file_path=Path(args.checkpoint_dir, "wandb_id.txt"),
         project_name="probing-shortcuts",
@@ -139,10 +158,12 @@ if __name__ == "__main__":
             "task": args.task,
             "dataset_seed": args.dataset_seed,
             "model": args.model,
+            "corruption_step": args.corruption_step,
             "slurm_id": args.slurm_id,
             "init_lr": args.init_lr,
             "batch_size": args.batch_size
         })
 
+    torch.manual_seed(args.dataset_seed)
     computed_metrics = train_glue_task(args)
     print(computed_metrics)

@@ -12,8 +12,9 @@ module use $HOME/env_scripts
 module load transformers4
 
 python -u glue_classify.py \
-    --task sst2 \
+    --task $2 \
     --model roberta-base \
+    --corruption_step 0 \
     --batch_size 4 \
     --init_lr $1 \
     --num_epochs 3 \
