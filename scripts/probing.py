@@ -8,9 +8,11 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import SVC
 import numpy as np
 import pandas as pd
+from pathlib import Path
 from tqdm import tqdm
 
 from data_utils import senteval_load_preprocessed, train_val_test_split
+from utils import timed_func 
 
 
 class Trainer:
@@ -105,20 +107,36 @@ def compare_three_conditions(all_data, nclasses, rs_list=[0,1,2,31,32767], train
     return pd.concat(agg_report).reset_index(drop=True)
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--task", default="bigram_shift")
-    parser.add_argument("--model", default="roberta")
-    args = parser.parse_args()
-
+@timed_func
+def main(args):
     all_report = []
     for layer in range(13):
-        taskstr = f"{args.task}.{args.model}_layer_{layer}"
-        all_data, nclasses = senteval_load_preprocessed(f"../data/senteval/{taskstr}")
+        taskstr = f"{args.task}_layer_{layer}"
+        all_data, nclasses = senteval_load_preprocessed("../data/senteval/embeddings_{}/{}".format(args.model_str, taskstr))
         print(f"Loaded preprocess data for task {taskstr}")
         report = compare_three_conditions(all_data, nclasses)
         report["task"] = [taskstr] * len(report)
         report["nclasses"] = [nclasses] * len(report)
         all_report.append(report)
     all_report_df = pd.concat(all_report).reset_index(drop=True)
-    all_report_df.to_csv(f"report_{args.task}.{args.model}.csv", index=False)
+    return all_report_df
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--task", default="bigram_shift")
+    parser.add_argument("--model", default="roberta-base")
+    parser.add_argument("--corruption_step", type=int, default=0)
+    args = parser.parse_args()
+    
+    model_str = "{}".format(args.model.replace("-", "_"))
+    if args.corruption_step > 0:
+        model_str += "_corr_{}".format(args.corruption_step)
+    args.model_str = model_str
+    print(args)
+
+    all_report_df = main(args)
+    report_folder = Path(f"../reports/embeddings_{args.model_str}")
+    if not report_folder.exists():
+        report_folder.mkdir()
+    all_report_df.to_csv(f"../reports/embeddings_{args.model_str}/report_{args.task}.csv", index=False)
