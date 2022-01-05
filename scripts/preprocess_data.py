@@ -37,7 +37,7 @@ class SentEvalPreprocessor(Preprocessor):
         self.model, self.tokenizer = self.prepare_model(modelname, corruption_step)
 
         # Prepare directory to save embedding
-        save_path = Path(self.data_path, "embeddings_{}".format(self.modelname.replace("-", "_")))
+        save_path = Path(self.data_path, "embeddings_{}".format(self.modelname.replace("-", "_").replace("/", "_")))
         if save_path.exists():
             print(f"Preprocessed directory found at {save_path}.")
         else:
@@ -54,7 +54,7 @@ class SentEvalPreprocessor(Preprocessor):
             modelpath = modelname  # For loading model 
             self.modelname = modelname  # For saving the SentEval embeddings
         else:
-            modelpath = "../data/corrupted_{}_checkpoints/checkpoint-{}".format(modelname.replace("-", "_"), corruption_step)
+            modelpath = "../data/corrupted_{}_checkpoints/checkpoint-{}".format(modelname.replace("-", "_").replace("/", "_"), corruption_step)
             self.modelname = "{}_corr_{}".format(modelname, corruption_step)
         model = AutoModel.from_pretrained(modelpath, output_hidden_states=True)
         tokenizer = AutoTokenizer.from_pretrained(modelpath)

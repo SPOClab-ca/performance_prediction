@@ -129,7 +129,7 @@ if __name__ == "__main__":
     parser.add_argument("--corruption_step", type=int, default=0)
     args = parser.parse_args()
     
-    model_str = "{}".format(args.model.replace("-", "_"))
+    model_str = "{}".format(args.model.replace("-", "_").replace("/", "_"))
     if args.corruption_step > 0:
         model_str += "_corr_{}".format(args.corruption_step)
     args.model_str = model_str
