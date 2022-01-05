@@ -8,8 +8,9 @@
 #SBATCH --error=../slurm/preprocess_%j.err
 #SBATCH --qos=normal
 
+
 . /etc/profile.d/lmod.sh
 module use $HOME/env_scripts
 module load transformers4
 
-python -u preprocess_data.py --modelname roberta-base --corruption_step $1
+python -u preprocess_data.py --modelname $1 --corruption_step $2
