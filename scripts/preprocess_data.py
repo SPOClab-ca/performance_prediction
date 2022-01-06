@@ -64,10 +64,10 @@ class SentEvalPreprocessor(Preprocessor):
         return model, tokenizer 
     
     def preprocess_w_transformer(self, task, bsize=10):
-        if self.skip_existing and Path(self.save_path, f"{task}_pooler").exists():
+        if self.skip_existing and Path(self.save_path, f"{task}_layer_1").exists():
             print(f"Found existing embedding for task {task}. Skipping...")
         x_list_by_layer = [[] for layer in range(MAX_LAYER)]
-        x_pooler_list = []
+        #x_pooler_list = []
         y_list = []
         data, n_classes = senteval_load_file(filepath=self.file_path.format(task))
         for i in tqdm(range(0, len(data), bsize)):
@@ -81,11 +81,11 @@ class SentEvalPreprocessor(Preprocessor):
             with torch.no_grad():
                 all_output = self.model(**batch_inputs)
                 all_output = all_output
-                pooler_output = all_output.pooler_output.cpu()  # (bsz, D)
+                #pooler_output = all_output.pooler_output.cpu()  # (bsz, D)
                 hidden_output = [t[:, 0, :].cpu() for t in all_output.hidden_states]  # List (len=n_layer) of (bsz, D)
                 for layer in range(MAX_LAYER):
                     x_list_by_layer[layer].append(hidden_output[layer])  # (bsz, D)
-                x_pooler_list.append(pooler_output)
+                #x_pooler_list.append(pooler_output)
                 y_list += [d['y'] for d in data[i:i+bsize]]
 
         y_list = np.array(y_list, dtype=np.int16)
@@ -95,11 +95,11 @@ class SentEvalPreprocessor(Preprocessor):
                 {'X': x_tensor, 'y': y_list}, 
                 Path(self.save_path, f"{task}_layer_{layer}")
             )
-        x_pooler_tensor = torch.cat(x_pooler_list, dim=0).numpy()  # (N, D)
-        torch.save(
-            {'X': x_pooler_tensor, 'y': y_list}, 
-            Path(self.save_path, f"{task}_pooler")
-        )
+        #x_pooler_tensor = torch.cat(x_pooler_list, dim=0).numpy()  # (N, D)
+        #torch.save(
+        #    {'X': x_pooler_tensor, 'y': y_list}, 
+        #    Path(self.save_path, f"{task}_pooler")
+        #)
         print(f"Saved task {task} embeddings to {self.save_path}")
 
 
