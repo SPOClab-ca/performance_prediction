@@ -3,6 +3,7 @@ import transformers
 import datasets
 from datasets import load_dataset, load_metric 
 from pathlib import Path 
+import time
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AdamW, get_scheduler
 from torch.utils.data import DataLoader
 import torch
@@ -42,11 +43,18 @@ def tokenize_function(examples, tokenizer, task):
         raise ValueError("Use task=mnli instead. mnli_matched and mnli_mismatched only contains validation and test")
     else:
         raise ValueError("tokenization for task {} currently not supported".format(task)) 
-    return tokenizer(processed_examples, padding="max_length", truncation=True)
+    if tokenizer.model_max_length > 512:
+        # xlnet-base-cased needs a manual specification of max_length; otherwise it doesn't pad (since its tokenizer.model_max_length is about 1e32)
+        return tokenizer(processed_examples, max_length=512, padding="max_length", truncation=True)
+    else:
+        return tokenizer(processed_examples, padding="max_length", truncation=True)
 
 
-@timed_func
-def train_glue_task(args):
+def prepare_datasets_models(args):
+    """
+    Prepares everything needed for this experiment.
+    Also reads from checkpoint if exists.
+    """
     if args.task in ["mnli_m", "mnli_mm"]:
         raw_datasets = load_dataset("glue", "mnli")
     else:
@@ -71,7 +79,6 @@ def train_glue_task(args):
     train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
     eval_dataloader = DataLoader(eval_dataset, batch_size=args.batch_size)
     #test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size)  # Not used
-
     if args.corruption_step > 0:
         model = AutoModelForSequenceClassification.from_pretrained(
             "../data/corrupted_{}_checkpoints/checkpoint-{}".format(
@@ -80,19 +87,43 @@ def train_glue_task(args):
     else:
         model = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=args.num_labels)
     model.to(device) 
-
+    
     optimizer = AdamW(model.parameters(), lr=args.init_lr)
-    num_training_steps = args.num_epochs * len(train_dataloader)
     lr_scheduler = get_scheduler(
         "linear",
         optimizer=optimizer,
         num_warmup_steps=0,
-        num_training_steps=num_training_steps
+        num_training_steps=args.num_epochs * len(train_dataloader)
     )
 
+    train_dataloader_start_batch_idx = 0
+    start_epoch = 0
+
+    checkpoint_path = Path(args.checkpoint_dir, "checkpoint.pt") 
+    if checkpoint_path.exists():
+        ckpt = torch.load(checkpoint_path)
+        model.load_state_dict(ckpt["model_state_dict"])
+        optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        lr_scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+        start_epoch = ckpt["train_start_epoch"]
+        train_dataloader_start_batch_idx = ckpt["train_dataloader_batch_idx"]
+        print("Loaded from checkpoint")
+    else:    
+        print("Prepared experiment material from scratch")
     model.train()
-    for epoch in range(args.num_epochs):
-        for b in tqdm(train_dataloader):
+    return train_dataloader, eval_dataloader, model, optimizer, lr_scheduler, start_epoch, train_dataloader_start_batch_idx
+
+
+@timed_func
+def train_glue_task(args):
+    train_dataloader, eval_dataloader, model, optimizer, lr_scheduler, start_epoch, train_dataloader_start_batch_idx = prepare_datasets_models(args)
+    last_ckpt_time = time.time()
+
+    for epoch in range(start_epoch, args.num_epochs):
+        for batch_idx, b in enumerate(train_dataloader):
+            if batch_idx < train_dataloader_start_batch_idx:
+                # Skip this batch
+                continue 
             batch = {
                 "input_ids": torch.stack(b["input_ids"]).transpose(0,1).to(device),
                 "attention_mask": torch.stack(b["attention_mask"]).transpose(0,1).to(device),
@@ -106,13 +137,24 @@ def train_glue_task(args):
             lr_scheduler.step()
             optimizer.zero_grad()
 
+            # Checkpoint at the end of this batch
+            if time.time() - last_ckpt_time > 600:  
+                torch.save({
+                     "model_state_dict": model.state_dict(),
+                     "optimizer_state_dict": optimizer.state_dict(),
+                     "scheduler_state_dict": lr_scheduler.state_dict(),
+                     "train_start_epoch": epoch,
+                     "train_dataloader_batch_idx": batch_idx,
+                }, Path(args.checkpoint_dir, "checkpoint.pt"))
+                last_ckpt_time = time.time()
+
         epoch_metric = evaluate(model, eval_dataloader)
         wandb.log({
             "epoch": epoch,
             "dev_acc": epoch_metric["accuracy"]
         })
         epoch_metric['epoch'] = epoch 
-
+        train_dataloader_start_batch_idx = 0
 
 def evaluate(model, eval_dataloader):
     metric = load_metric("accuracy")
