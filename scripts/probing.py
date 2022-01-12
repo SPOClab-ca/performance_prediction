@@ -65,7 +65,7 @@ class Trainer:
         return pd.DataFrame(report)
 
 
-def compare_three_conditions(all_data, nclasses, rs_list=[0,1,2,31,32767], train_size_per_class=12000):
+def compare_three_conditions(all_data, nclasses, rs_list=[0,1,2,31,32767], train_size_per_class=1200):
     """
     Compare three settings: (A) use full neurons; (B) only those with MI=0; (C) only those with MI>0
     """
