@@ -135,8 +135,13 @@ if __name__ == "__main__":
     args.model_str = model_str
     print(args)
 
-    all_report_df = main(args)
     report_folder = Path(f"../reports/embeddings_{args.model_str}")
     if not report_folder.exists():
         report_folder.mkdir()
-    all_report_df.to_csv(f"../reports/embeddings_{args.model_str}/report_{args.task}.csv", index=False)
+    report_path = Path(report_folder, f"report_{args.task}.csv")
+    if report_path.exists():
+        print("Detected previous probing results. Skip it.")
+    else:
+        all_report_df = main(args)
+        all_report_df.to_csv(report_path, index=False)
+        print("Saved to {}".format(report_path)
