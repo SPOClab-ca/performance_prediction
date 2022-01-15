@@ -82,7 +82,7 @@ def prepare_datasets_models(args):
     if args.corruption_step > 0:
         model = AutoModelForSequenceClassification.from_pretrained(
             "../data/corrupted_{}_checkpoints/checkpoint-{}".format(
-                args.model.replace("-", "_"), 
+                args.model.replace("-", "_").replace("/", "_"), 
                 args.corruption_step))
     else:
         model = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=args.num_labels)
