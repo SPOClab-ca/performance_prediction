@@ -64,7 +64,7 @@ class SentEvalPreprocessor(Preprocessor):
         return model, tokenizer 
     
     def preprocess_w_transformer(self, task, bsize=10):
-        if self.skip_existing and Path(self.save_path, f"{task}_layer_1").exists():
+        if self.skip_existing and Path(self.save_path, f"{task}_layer_12").exists():
             print(f"Found existing embedding for task {task}. Skipping...")
         x_list_by_layer = [[] for layer in range(MAX_LAYER)]
         #x_pooler_list = []
