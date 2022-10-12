@@ -1,0 +1,82 @@
+---
+title: "ANOVA: foundational models"
+output: html_notebook
+---
+
+## Notes
+Try to follow this tutorial: https://www.datanovia.com/en/lessons/anova-in-r
+
+## Load data
+
+```{r}
+df <- read.csv("../reports/probing_results_1200_per_class/task1_predict_task_performance.csv")
+all_foundation_models <- c(
+  "embeddings_roberta_base", "embeddings_xlm_roberta_base", "albert_base_v2",
+  "microsoft_deberta_base", "xlnet_base_cased"
+)
+#df$labels <- c(1,1,1,1,1,1,2,2,2,2,2,2,3,3,3,3,3,3,4,4,4,4,4,4,5)
+df$labels <- c(rep("1", 6), rep("2", 6), rep("3", 6), rep("4", 6), "5")
+```
+
+## Summary stats, visualization
+
+```{r}
+ggboxplot(df, x="labels", y="cola")
+```
+
+```{r}
+# Pairwise comparisons
+tukey_hsd(df, rte ~ as.factor(labels))
+tukey_hsd(df, cola ~ as.factor(labels))
+tukey_hsd(df, mrpc ~ as.factor(labels))
+tukey_hsd(df, sst2 ~ as.factor(labels))
+tukey_hsd(df, qnli ~ as.factor(labels))
+tukey_hsd(df, qqp ~ as.factor(labels))
+```
+
+## Still use regression vs. ctrl setting
+
+```{r}
+probing_some_layers_some_ptasks <- function(features) {
+  x_y_features = c("labels", features)
+  formula = "labels ~ ."
+  model <- glm(formula, data=df[x_y_features], family=multinomial)
+  anova_result <- anova(model)
+  summary_result <- summary(model)
+  mse <- mean(summary_result$residuals^2)
+  
+  ctrl_features <- matrix(rnorm(length(features) * nrow(df), 0, 0.1), 
+                         nrow=nrow(df), ncol=length(features))
+  ctrl_label <- df["labels"]
+  Z <- as.data.frame(cbind(ctrl_label, ctrl_features))
+  ctrl_model <- glm("labels ~ .", data=Z)
+  ctrl_mse <- mean(summary(ctrl_model)$residuals^2)
+  if (ctrl_mse == 0) {
+    reduction = 0
+  } else {
+    reduction = (ctrl_mse-mse)/ctrl_mse*100
+  }
+
+  return(list(
+    "anova_result"=anova_result, 
+    "summary_result"=summary_result, 
+    "MSE"=mse,
+    "MSE_reduction"=reduction ))
+}
+set.seed(1234)
+for (gt in all_glue_tasks) {
+  features = c(
+    "bigram_shift_layer_5",
+    "coordination_inversion_layer_4",
+    "obj_number_layer_1", 
+    "odd_man_out_layer_1",  
+    "past_present_layer_3",
+    "subj_number_layer_1",
+    "tree_depth_layer_12"  
+  )
+  ret <- probing_some_layers_some_ptasks(gt, features)
+  print(sprintf("GLUE task %s, MSE %.5f, MSE_Reduction %.2f", 
+                gt, ret$MSE, ret$MSE_reduction))
+}
+```
+

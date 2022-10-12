@@ -1,0 +1,52 @@
+---
+title: "Analyze shortcut effects"
+author: "Zining Zhu"
+date: "12/17/2021"
+output: html_document
+---
+
+## Load data
+(Loading the bigram_shift as example. Will repeat for other SentEval tasks later.)
+```{r}
+library(lme4) 
+library(lmerTest)
+
+df <- rbind(
+  read.csv("../reports/report_bigram_shift.roberta.csv"),
+  read.csv("../reports/report_coordination_inversion.roberta.csv"),
+  read.csv("../reports/report_obj_number.roberta.csv"),
+  read.csv("../reports/report_odd_man_out.roberta.csv"),
+  read.csv("../reports/report_past_present.roberta.csv"),
+  read.csv("../reports/report_subj_number.roberta.csv"))
+head(df)
+```
+
+```{r}
+df_fvz = df[(df$config=='Full') | (df$config=='ZeroMI'),]
+df_nvz = df[(df$config=='Nonzero') | (df$config=='ZeroMI'), ]
+df_fvn = df[(df$config=='Full') | (df$config=='Nonzero'),]
+```
+
+Linear mixture model.
+
+```{r}
+model_fvz <- lm(test_acc ~ task + model + config, data=df_fvz)
+anova(model_fvz)
+model_nvz <- lm(test_acc ~ task + model + config, data=df_nvz)
+anova(model_nvz)
+model_fvn <- lm(test_acc ~ task + model + config, data=df_fvn)
+anova(model_fvn)
+```
+In both Full vs ZeroMI (`fvz`) and Nonzero vs ZeroMI (`nvz`) settings, the configuration has significant effects on the test accuracy; but the config has no effects in Full vs Nonzero (`fvn`) setting.
+
+## LMM with random effects
+```{r}
+model_fvn_re <- lmer(test_acc ~ task + model + config + (1+config|rs), data=df_fvn)
+anova(model_fvn_re)
+```
+```{r}
+model_fvn_re <- lmer(test_loss ~ task + model + config + (1+config|rs), data=df_fvn)
+anova(model_fvn_re)
+```
+
+When considering the random effects of the seeds, the config still has no effects.

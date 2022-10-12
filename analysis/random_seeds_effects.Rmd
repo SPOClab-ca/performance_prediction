@@ -1,0 +1,77 @@
+---
+title: "Random seeds effects"
+output: html_notebook
+---
+
+Our method involve comparing the maximum MSE reductions against the baseline (regressing from features drawn from Gaussian). How does different random seeds affect the experiment results? Do the error analysis in this notebook.
+
+## Load and prepare data
+```{r}
+library(tictoc)
+library(caret)
+
+all_glue_tasks = c("rte", "cola", "mrpc", "sst2", "qnli", "qqp")
+df <- read.csv("../reports/probing_results_1200_per_class/task1_predict_task_performance.csv")
+dim(df)
+```
+
+## 1. Variance of the MSE_ctrl
+
+For each rs: compute the MSE_ctrl.  
+Return the resulted MSE_ctrl w.r.t the number of features.
+
+```{r}
+simulate_mse_ctrl <- function(N, nfeat, gt) {
+  labels <- df[gt]
+  set.seed(1234)
+  
+  results = c()
+  for (i in 1:N) {
+    x <- matrix(rnorm(nrow(df) * nfeat, 0, 0.1), 
+                nrow=nrow(df), ncol=nfeat)
+    ctrl_xydata <- cbind(x, labels)
+    #print(sprintf("ctrl_xydata shape: %d, %d", nrow(ctrl_xydata), ncol(ctrl_xydata)))
+    
+    ctrl_model <- train(
+      as.formula(sprintf("%s ~ .", gt)), 
+      data=ctrl_xydata,
+      method="lm",
+      trControl=trainControl(method="cv", number=5))
+    ctrl_RMSE <- sqrt(mean(summary(ctrl_model)$residual^2))
+    results = c(results, ctrl_RMSE)
+  }
+  return(list(
+    "mean"=mean(results),
+    "std"=sd(results)
+  ))
+}
+
+
+tic("Run simulation")
+means <- matrix(rep(NA, length(all_glue_tasks)*3), length(all_glue_tasks), 3)
+stds <- matrix(rep(NA, length(all_glue_tasks)*3), length(all_glue_tasks), 3)
+ratios <- matrix(rep(NA, length(all_glue_tasks)*3), length(all_glue_tasks), 3)
+n_sim = 100
+for (i in 1:length(all_glue_tasks)) {
+  gt = all_glue_tasks[i]
+  results_3 = simulate_mse_ctrl(n_sim, 3, gt)
+  results_7 = simulate_mse_ctrl(n_sim, 7, gt)
+  results_12 = simulate_mse_ctrl(n_sim, 12, gt)
+  means[i,] = c(results_3$mean, results_7$mean, results_12$mean)
+  stds[i,] = c(results_3$std, results_7$std, results_12$std)
+}
+ratios = stds / means
+ratios
+toc()
+
+```
+```{r}
+apply(ratios, 1, mean)
+```
+```{r}
+plotdata = data.frame(ratios, row.names=all_glue_tasks)
+names(plotdata)=c("3", "7", "12")
+write.csv(plotdata, "random_seeds_ratios.csv", row.names=TRUE)
+```
+
+
